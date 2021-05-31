@@ -1,0 +1,187 @@
+const { SHA256 } = require("crypto-js");
+const { ec } = require("elliptic");
+const EC = new ec("secp256k1");
+
+class Transactions {
+    constructor(fromAddress, toAddress, amount) {
+        this.fromAddress = fromAddress;
+        this.toAddress = toAddress;
+        this.amount = amount;
+    }
+    calculateHash() {
+        return SHA256(this.fromAddress + this.toAddress + this.amount).toString();
+    }
+    signTransaction(signinKey) {
+        if (signinKey.getPublic("hex") !== this.fromAddress) {
+            throw new Error("You cannot sign transactions for other wallets!");
+        }
+        const hashTx = this.calculateHash();
+        const sig = signinKey.sign(hashTx, "base64");
+        this.signature = sig.toDER("hex");
+    }
+    isvalid() {
+        if (this.fromAddress === null) return true;
+        if (!this.signature || this.signature.length === 0) {
+            throw new Error("No signature in this transaction");
+        }
+        const publicKey = EC.keyFromPublic(this.fromAddress, "hex");
+        return publicKey.verify(this.calculateHash(), this.signature);
+    }
+}
+
+class Block {
+    constructor(timestamp, transactions, previousHash = "") {
+        this.timestamp = timestamp;
+        this.transactions = transactions;
+        this.previousHash = previousHash;
+        this.hash = this.calculateHash();
+        this.nonce = 0;
+    }
+    calculateHash() {
+        return SHA256(
+            this.timestamp +
+            JSON.stringify(this.transactions) +
+            this.previousHash +
+            this.nonce
+        ).toString();
+    }
+    mineBlock(difficulty) {
+        while (
+            this.hash.substring(0, difficulty) !== Array(difficulty + 1).join("0")
+        ) {
+            this.nonce++;
+            this.hash = this.calculateHash();
+        }
+        console.log("Blokc mined!");
+    }
+    hasValidTransactions() {
+        for (const tx of this.transactions) {
+            if (!tx.isvalid()) return false;
+        }
+        return true;
+    }
+}
+
+class Blockchain {
+    constructor() {
+        this.chain = [this.genesisBlock()];
+        this.difficulty = 2;
+        this.pendingTransactions = [];
+        this.miningReward = 0;
+    }
+    genesisBlock() {
+        return new Block("12/12/2012", "genesis-block", "0");
+    }
+    latestBlock() {
+        return this.chain[this.chain.length - 1];
+    }
+    createTransaction(transaction) {
+        if (!transaction.fromAddress || !transaction.toAddress) {
+            throw new Error("Transaction must include from and to address");
+        }
+        if (!transaction.isvalid()) {
+            throw new Error("Cannot add invalid transaction to chain");
+        }
+        this.pendingTransactions.push(transaction);
+    }
+    minePendingTransactions(miningRewardAddress) {
+        const reward = new Transactions(
+            null,
+            miningRewardAddress,
+            this.miningReward
+        );
+        this.pendingTransactions.push(reward);
+
+        let block = new Block(
+            Date.now(),
+            this.pendingTransactions,
+            this.latestBlock().hash
+        );
+        block.mineBlock(this.difficulty);
+
+        this.chain.push(block);
+        this.pendingTransactions = [];
+    }
+
+    getBalance(address) {
+        let balance = 0;
+        for (const block of this.chain) {
+            for (const trans of block.transactions) {
+                if (trans.fromAddress === address) {
+                    balance -= parseFloat(trans.amount);
+                }
+                if (trans.toAddress === address) {
+                    balance += parseFloat(trans.amount);
+                }
+            }
+        }
+        return balance;
+    }
+
+    isChainValid() {
+        for (let i = 1; i < this.chain.length; i++) {
+            const currentBlock = this.chain[i];
+            const previousBlock = this.chain[i - 1];
+            if (currentBlock.hash !== currentBlock.calculateHash()) return false;
+            if (currentBlock.previousHash !== previousBlock.hash) return false;
+            if (!currentBlock.hasValidTransactions()) return false;
+        }
+        return true;
+    }
+}
+
+const pejecoin = new Blockchain();
+
+module.exports = {
+    pejecoin,
+    Transactions,
+};
+
+/* const myKey = EC.keyFromPrivate(
+    "2db8f69d2ee66bf617484fc77041f87898f55160ea6d7d4eb232df64b40d0bae"
+);
+const myWallet = myKey.getPublic("hex");
+
+const pejecoin = new Blockchain();
+
+const newTransaction = new Transactions(myWallet, "Ana", 10);
+newTransaction.signTransaction(myKey);
+pejecoin.createTransaction(newTransaction);
+
+pejecoin.minePendingTransactions(myWallet);
+
+console.log(JSON.stringify(pejecoin, null, 4));
+
+console.log("Balance is: ", pejecoin.getBalance(myWallet)); */
+
+/* const pejecoin = new Blockchain();
+
+pejecoin.createTransaction(new Transactions("daniel", "ana", 100));
+
+pejecoin.minePendingTransactions("wallet");
+pejecoin.minePendingTransactions("wallet");
+
+console.log(JSON.stringify(pejecoin, null, 4));
+
+console.log("balance: ", pejecoin.getBalance("wallet")); */
+
+////////////////////
+/* pejecoin.createTransaction(new Transactions("Daniel", "Ana", 100));
+pejecoin.createTransaction(new Transactions("Ana", "Daniel", 50));
+
+pejecoin.minePendingTransactions("Wallet");
+pejecoin.minePendingTransactions("Wallet");
+
+console.log(JSON.stringify(pejecoin, null, 4));
+
+console.log("Balance is: ", pejecoin.getBalance("Wallet")); */
+
+/* let coin = new Blockchain();
+
+console.log("start the miner...");
+coin.createTransaction(new Block(Date.now(), data));
+coin.createTransaction(new Block(Date.now(), data));
+coin.createTransaction(new Block(Date.now(), data));
+
+console.log(JSON.stringify(coin, null, 4));
+console.log("Is valid: ", coin.isChainValid()); */
